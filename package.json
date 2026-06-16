@@ -1,0 +1,18 @@
+{
+  "name": "finlens",
+  "version": "1.0.0",
+  "description": "Financial Lens - Full Stack Finance Management Application",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run start:dev --workspace=backend",
+    "build": "npm run build --workspaces",
+    "start": "npm start --workspace=frontend",
+    "lint": "npm run lint --workspaces"
+  }
+}

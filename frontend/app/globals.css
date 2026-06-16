@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+/* Your colorful theme variables below */
+@theme {
+  --color-background: oklch(0.15 0.05 250);
+  --color-primary: oklch(0.7 0.2 320);
+}
