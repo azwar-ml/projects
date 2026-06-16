@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyScope - Dynamic Weather Dashboard</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* BASE STYLES & TRANSITIONS */
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: background 1.5s ease;
+            overflow: hidden; 
+        }
+        main {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            z-index: 10; 
+        }
+        /* Central Content Card Styles (Frosted Glass) */
+        .weather-card-container {
+            backdrop-filter: blur(15px);
+            background-color: rgba(255, 255, 255, 0.2); 
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+            z-index: 20;
+            max-height: 90vh; 
+            overflow-y: auto; 
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: transform 0.5s ease-out; /* For sliding effect */
+        }
+        /* Metric Card Styles (Semi-transparent) */
+        .metric-card {
+            background-color: rgba(255, 255, 255, 0.75); 
+            transition: transform 0.2s ease, background-color 0.5s ease;
+        }
+        .metric-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        /* --- DYNAMIC BACKGROUND THEMES (Full Screen) --- */
+        
+        /* Welcome Screen Default - Vibrant, Motivational Look */
+        .bg-welcome { background: linear-gradient(135deg, #0f172a 0%, #4f46e5 100%); color: white; }
+
+        /* Clear Day */
+        .bg-day-Clear { background: linear-gradient(135deg, #74a0e4 0%, #a4e1f7 100%); }
+        /* Clear Night */
+        .bg-night-Clear { background: linear-gradient(135deg, #111827 0%, #374151 100%); color: white; }
+        
+        /* Cloudy/Mist */
+        .bg-day-Clouds, .bg-day-Mist, .bg-day-Haze { background: linear-gradient(135deg, #a0b1c0 0%, #e0e7ee 100%); }
+        .bg-night-Clouds, .bg-night-Mist, .bg-night-Haze { background: linear-gradient(135deg, #374151 0%, #4b5563 100%); color: white; }
+
+        /* Rain/Drizzle Theme (sets base for rain effect) */
+        .bg-day-Rain, .bg-night-Rain, .bg-day-Drizzle, .bg-night-Drizzle { background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: white; }
+        
+        /* Snow Theme (sets base for snow effect) */
+        .bg-day-Snow, .bg-night-Snow { background: linear-gradient(135deg, #c4d7e0 0%, #eef0f4 100%); }
+
+        /* Night mode specific colors */
+        body[class*="bg-night-"] h1, body[class*="bg-night-"] h2, body[class*="bg-night-"] .text-gray-900 { color: #f3f4f6; } 
+        body[class*="bg-night-"] .metric-card { background-color: rgba(31, 41, 55, 0.75); color: #f3f4f6; }
+        body[class*="bg-night-"] .metric-card p { color: inherit; }
+        body[class*="bg-night-"] .text-gray-500 { color: #9ca3af; }
+
+        /* --- SLIDING EFFECT --- */
+        /* Start off-screen */
+        .results-slide-out {
+            transform: translateX(100vw);
+        }
+        /* Slide in after DOM load */
+        .results-slide-in {
+            transform: translateX(0);
+        }
+
+        /* --- IMMERSIVE RAIN EFFECT --- */
+        .rain-effect {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; z-index: 1; pointer-events: none;
+        }
+        .rain-effect::before, .rain-effect::after {
+            content: ''; position: absolute; top: -100px; left: 0; width: 100%; height: 100vh;
+            background-image: linear-gradient(transparent 50%, rgba(135, 206, 250, 0.4) 50%), linear-gradient(transparent 50%, rgba(135, 206, 250, 0.2) 50%);
+            background-size: 10px 1000px, 20px 1000px; 
+            animation: rain-fall 0.8s linear infinite;
+        }
+        .rain-effect::after {
+            left: 50%; animation-duration: 1.2s; opacity: 0.6; background-size: 15px 1000px, 25px 1000px;
+        }
+        @keyframes rain-fall { 0% { transform: translateY(0); } 100% { transform: translateY(1000px); } }
+
+        /* --- IMMERSIVE SNOW EFFECT --- */
+        .snow-effect {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; z-index: 1; pointer-events: none;
+        }
+        .snowflake {
+            position: absolute; width: 5px; height: 5px; background: white; border-radius: 50%; opacity: 0.8; filter: blur(0.5px); animation: snowfall 12s linear infinite;
+        }
+        .snowflake:nth-child(even) { animation-duration: 8s; animation-delay: 2s; width: 3px; height: 3px; }
+        .snowflake:nth-child(3n) { animation-duration: 15s; animation-delay: 5s; opacity: 0.5; }
+
+        @keyframes snowfall {
+            0% { transform: translate3d(0, -10vh, 0); opacity: 0; }
+            100% { transform: translate3d(5vw, 100vh, 0); opacity: 0.8; }
+        }
+
+    </style>
+</head>
+
+{% set weather_data = weather|default({}) %}
+{% set condition = weather_data.weather_condition|default('Clear') %}
+{% set is_night = weather_data.is_night|default(false) %}
+
+<!-- DYNAMIC BODY CLASS: switches between bg-welcome and specific weather theme -->
+<body class="{% if weather_data %}
+    {% if is_night %}bg-night-{{ condition }}
+    {% else %}bg-day-{{ condition }}
+    {% endif %}
+{% else %}bg-welcome{% endif %}">
+    
+    <!-- Dynamic Weather Effects Layer -->
+    {% if weather_data %}
+        {% if condition == 'Rain' or condition == 'Drizzle' %}
+        <div class="rain-effect"></div>
+        {% elif condition == 'Snow' %}
+        <div class="snow-effect" id="snow-container"></div>
+        {% elif condition == 'Thunderstorm' %}
+        <!-- Simple Thunderstorm flash effect -->
+        <div class="rain-effect" style="background-image: none;">
+            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; opacity: 0; animation: thunder-flash 4s infinite;"></div>
+        </div>
+        <div class="rain-effect"></div>
+        <style>@keyframes thunder-flash { 0%, 100% { opacity: 0; } 50% { opacity: 0.5; } 50.1% { opacity: 0; } 50.2% { opacity: 1; } 50.3% { opacity: 0; } }</style>
+        {% endif %}
+    {% endif %}
+
+    <main>
+        
+        <!-- --- WELCOME SCREEN (If no weather data exists) --- -->
+        {% if not weather_data %}
+        <div class="w-full max-w-4xl p-8 sm:p-16 rounded-[2rem] text-center weather-card-container">
+            <h1 class="text-6xl sm:text-7xl font-black text-white mb-6 drop-shadow-lg">Welcome to SkyScope</h1>
+            <p class="text-xl sm:text-2xl text-white/90 mb-12 font-light italic">
+                "The world is a book, and those who do not travel weather only read a page."
+            </p>
+            
+            <form method="POST" action="/" id="weatherForm" class="space-y-6">
+                <div class="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                    <!-- City Input -->
+                    <input type="text" name="city" placeholder="Enter city name for instant forecast (e.g., Tokyo)" required
+                           class="flex-grow w-full max-w-lg p-5 border border-indigo-400 rounded-2xl focus:ring-indigo-500 focus:border-indigo-500 shadow-xl text-gray-800 font-medium text-lg">
+
+                    <!-- Hidden Unit Input -->
+                    <input type="hidden" name="unit" id="unitInput" value="{{ current_unit|default('metric') }}">
+                </div>
+                
+                <div class="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6 pt-4">
+                    
+                    <button type="submit" id="searchButton" 
+                            class="w-full sm:w-auto px-12 py-4 bg-green-500 hover:bg-green-600 text-white font-extrabold rounded-xl transition duration-200 shadow-2xl hover:shadow-green-400/50 transform hover:scale-105">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM3.293 4.293a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM16 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM4 10a1 1 0 01-1 1H2a1 1 0 110-2h1a1 1 0 011 1zM16.707 4.293a1 1 0 00-1.414 0l-.707.707a1 1 0 101.414 1.414l.707-.707a1 1 0 000-1.414zM13 16a1 1 0 10-2 0v1a1 1 0 102 0v-1z" />
+                            <path fill-rule="evenodd" d="M12.5 10a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" clip-rule="evenodd" />
+                        </svg>
+                        GET FORECAST
+                    </button>
+
+                    <!-- Unit Toggle Buttons (for selection preference before submission) -->
+                    <div class="flex items-center rounded-xl shadow-lg overflow-hidden shrink-0 bg-white">
+                        <button type="button" id="unitC" 
+                                class="px-5 py-3 text-sm font-bold transition duration-150 rounded-l-xl 
+                                {% if current_unit == 'metric' %}unit-active{% else %}unit-inactive{% endif %}" 
+                                onclick="toggleUnit('metric')">°C</button>
+                        <button type="button" id="unitF" 
+                                class="px-5 py-3 text-sm font-bold transition duration-150 rounded-r-xl 
+                                {% if current_unit == 'imperial' %}unit-active{% else %}unit-inactive{% endif %}" 
+                                onclick="toggleUnit('imperial')">°F</button>
+                    </div>
+                </div>
+                
+                {% if error %}
+                <div class="mt-8 text-center p-3 rounded-xl bg-red-800 text-white font-medium border border-red-600 shadow-lg">
+                    {{ error }}
+                </div>
+                {% endif %}
+            </form>
+            
+        </div>
+        
+        <!-- --- RESULTS DASHBOARD (If weather data exists) --- -->
+        {% else %}
+        <div id="resultsCard" class="w-full max-w-4xl p-6 sm:p-12 rounded-[2rem] weather-card-container text-white results-slide-out">
+            
+            <div class="flex justify-between items-center mb-6">
+                <button onclick="window.location.href='/'" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl text-sm font-bold transition duration-200">
+                    ← Go Back to Search
+                </button>
+                <p class="text-xl font-extrabold drop-shadow-lg">SkyScope</p>
+            </div>
+
+            <!-- Result Header Card -->
+            <div class="p-4 sm:p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between bg-black/30 shadow-2xl">
+                <div class="text-center sm:text-left">
+                    <h2 class="text-5xl font-extrabold">{{ weather.city }}, {{ weather.country }}</h2>
+                    <!-- FIX: Displaying the calculated local time directly -->
+                    <p id="weatherTimeDate" class="text-md font-light opacity-80 mt-1 mb-3 sm:mb-0">{{ weather.city_local_datetime }}</p>
+                </div>
+
+                <div class="flex items-center space-x-4 mt-4 sm:mt-0">
+                    <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@4x.png" alt="{{ weather.description }}" class="w-28 h-28 sm:w-36 sm:h-36 -m-4 filter drop-shadow-lg">
+                    <div class="text-right">
+                        <!-- FIX: Using the pre-processed 'temp_primary' key from app.py to avoid the 'split' filter error. -->
+                        <span class="text-7xl font-black block leading-none" id="primary-temp">
+                            {{ weather.temp_primary }}
+                        </span>
+                        <span class="text-xl font-medium block text-white/80">
+                           {{ weather.temp }}
+                        </span>
+                        <p class="text-2xl font-semibold mt-2">{{ weather.description }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics Grid -->
+            <div class="mt-8 grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
+                <!-- Feels Like Card (Highlights if cold) -->
+                <div class="metric-card p-4 sm:p-6 rounded-xl text-gray-900 
+                    {% if weather.is_cold %}bg-blue-300 border-blue-500 !text-black shadow-inner !font-extrabold{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-600 mb-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l3 3a1 1 0 001.414-1.414L11 9.586V6z" clip-rule="evenodd" /></svg>
+                    <p class="text-sm font-medium text-gray-500">Feels Like</p>
+                    <p class="text-xl font-bold">{{ weather.feels_like }}</p>
+                </div>
+
+                <!-- Humidity Card -->
+                <div class="metric-card p-4 sm:p-6 rounded-xl text-gray-900">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-600 mb-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7a1 1 0 011.414-1.414L10 14.586l6.293-6.293a1 1 0 011.414 0zM10 2a1 1 0 011 1v10.586l3.293-3.293a1 1 0 111.414 1.414l-5 5a1 1 0 01-1.414 0l-5-5a1 1 0 111.414-1.414L9 13.586V3a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                    <p class="text-sm font-medium text-gray-500">Humidity</p>
+                    <p class="text-2xl font-bold">{{ weather.humidity }}%</p>
+                </div>
+                
+                <!-- Wind Speed Card -->
+                <div class="metric-card p-4 sm:p-6 rounded-xl text-gray-900">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-teal-600 mb-2" viewBox="0 0 20 20" fill="currentColor"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM5 8a1 1 0 011-1h4a1 1 0 010 2H6a1 1 0 01-1-1zm3 4a1 1 0 100 2h4a1 1 0 100-2H8z" /></svg>
+                    <p class="text-sm font-medium text-gray-500">Wind Speed</p>
+                    <p class="text-xl font-bold">{{ weather.wind_speed }}</p>
+                </div>
+
+                <!-- Pressure Card -->
+                <div class="metric-card p-4 sm:p-6 rounded-xl text-gray-900">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-600 mb-2" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zM5 9a1 1 0 011-1h8a1 1 0 011 1v2a1 1 0 01-1 1H6a1 1 0 01-1-1V9z" /></svg>
+                    <p class="text-sm font-medium text-gray-500">Pressure</p>
+                    <p class="text-2xl font-bold">{{ weather.pressure }} hPa</p>
+                </div>
+
+                <!-- Visibility Card -->
+                <div class="metric-card p-4 sm:p-6 rounded-xl text-gray-900">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-600 mb-2" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" /></svg>
+                    <p class="text-sm font-medium text-gray-500">Visibility</p>
+                    <p class="text-2xl font-bold">{{ weather.visibility }} km</p>
+                </div>
+
+                <!-- Static UV Card -->
+                <div class="metric-card p-4 sm:p-6 rounded-xl text-gray-900">
+                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500 mb-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.75 6.5A1.25 1.25 0 007.5 7.75v4.5A1.25 1.25 0 008.75 13h2.5A1.25 1.25 0 0012.5 11.75v-4.5A1.25 1.25 0 0011.25 6.5h-2.5zM10 15a1 1 0 100 2 1 1 0 000-2z" />
+                    </svg>
+                    <p class="text-sm font-medium text-gray-500">UV Index</p>
+                    <p class="text-2xl font-bold">Low (1-2)</p>
+                </div>
+                
+            </div>
+        </div>
+        {% endif %}
+    
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full bg-gray-800 text-white text-center py-4 text-sm mt-auto z-30">
+        &#169; Azwar Malhi — SkyScope
+    </footer>
+
+    <script>
+        // Pass result status safely from Python to JavaScript
+        const IS_RESULT_PAGE = {{ 'true' if is_result_page|default(false) else 'false' }};
+
+        const unitInput = document.getElementById('unitInput');
+        
+        // Function to toggle unit selection style (used on the Welcome Screen)
+        function toggleUnit(newUnit) {
+            unitInput.value = newUnit;
+            const isMetric = newUnit === 'metric';
+            
+            // This is only called on the welcome screen, so we can assume button IDs exist
+            const unitCButton = document.getElementById('unitC');
+            const unitFButton = document.getElementById('unitF');
+
+            unitCButton.classList.toggle('unit-active', isMetric);
+            unitCButton.classList.toggle('unit-inactive', !isMetric);
+            unitFButton.classList.toggle('unit-active', !isMetric);
+            unitFButton.classList.toggle('unit-inactive', isMetric);
+
+            // Update button text style for welcome screen (only changes appearance)
+            unitCButton.classList.toggle('bg-indigo-600', isMetric);
+            unitCButton.classList.toggle('text-white', isMetric);
+            unitCButton.classList.toggle('bg-white', !isMetric);
+            unitCButton.classList.toggle('text-gray-800', !isMetric);
+
+            unitFButton.classList.toggle('bg-indigo-600', !isMetric);
+            unitFButton.classList.toggle('text-white', !isMetric);
+            unitFButton.classList.toggle('bg-white', isMetric);
+            unitFButton.classList.toggle('text-gray-800', isMetric);
+        }
+
+        // Initialization and Dynamic Effects
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // --- Welcome Screen Setup ---
+            // FIX: Using the safely embedded IS_RESULT_PAGE variable instead of attempting complex Jinja evaluation here.
+            if (!IS_RESULT_PAGE) {
+                // Initialize unit styles on the welcome screen
+                toggleUnit(unitInput.value);
+            }
+            
+            // --- Results Dashboard Setup ---
+            const resultsCard = document.getElementById('resultsCard');
+            if (resultsCard) {
+                // Apply sliding effect (slides card into view)
+                setTimeout(() => {
+                    resultsCard.classList.remove('results-slide-out');
+                    resultsCard.classList.add('results-slide-in');
+                }, 50);
+
+                // FIX: Removing the problematic Jinja comment, as the parser is failing on it.
+                // Generate snowflakes if the snow container exists
+                const snowContainer = document.getElementById('snow-container');
+                if (snowContainer) {
+                    const numberOfSnowflakes = 80;
+                    for (let i = 0; i < numberOfSnowflakes; i++) {
+                        const flake = document.createElement('div');
+                        flake.className = 'snowflake';
+                        flake.style.left = `${Math.random() * 100}%`;
+                        flake.style.animationDelay = `${Math.random() * 10}s`;
+                        flake.style.animationDuration = `${Math.random() * 8 + 10}s`;
+                        snowContainer.appendChild(flake);
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
